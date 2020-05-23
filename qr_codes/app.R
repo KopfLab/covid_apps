@@ -20,7 +20,7 @@ logs_sheet_id <- "1jfj2u5hm-vIrq1oXiNEGgvEQKpsbovvCZ2iD6uZ3zMM"
 # app
 shinyApp(
   ui = fluidPage(
-    h1("Generate QR Codes"),
+    h1("Generate QR Codes for Benson (BESC)"),
     h4("Select Rooms"),
     h4(style = "color: red;", textOutput("rooms_info")),
     selector_table_ui("rooms"),
@@ -30,10 +30,10 @@ shinyApp(
       selector_table_buttons_ui("rooms"),
       spaces(1),
       downloadButton("generate", "Generate QR Codes for Selected Rooms")
-    ),
-    h1("Logs (TZ = Denver)"),
-    DTOutput("logs"),
-    actionButton("refresh_logs", "Refresh Logs", icon = icon("refresh"))
+    )
+    # h1("Logs (TZ = Denver)"),
+    # DTOutput("logs"),
+    # actionButton("refresh_logs", "Refresh Logs", icon = icon("refresh"))
   ),
   server = function(input, output, session) {
     
