@@ -20,7 +20,8 @@ shinyApp(
   ui = fluidPage(
     shinyjs::useShinyjs(),
     h1("Generate QR Codes for your building"),
-    h4("Instructions available", a(href = "https://docs.google.com/document/d/1n42-g-CoqoNPL8JOfx1OAykIDCj9lUEGy_fTGKVIG4E/edit?usp=sharing", "at this link")),
+    h4("Instructions available", a(href = "https://docs.google.com/document/d/1n42-g-CoqoNPL8JOfx1OAykIDCj9lUEGy_fTGKVIG4E/edit?usp=sharing", "at this link"), 
+       ", source code available", a(href = "https://github.com/KopfLab/covid_apps/tree/master/building_qr_codes", "on GitHub")),
     h2("Pre-filled Form Link"),
     textInput(inputId = "prefilled_form_link", label = NULL, placeholder = "Paste link"),
     h5(
