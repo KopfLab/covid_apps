@@ -32,6 +32,7 @@ packrat/src/
 # output files
 *.html
 *.docx
+*.xlsx
 
 # app upload
 rsconnect/*
