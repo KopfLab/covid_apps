@@ -1,21 +1,29 @@
+library(rlang)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(readxl)
+library(officer)
+library(googlesheets4)
+
 library(shiny)
 library(shinyjs)
 library(shinyBS)
 library(DT)
 
-library(readxl)
-library(dplyr)
-library(stringr)
-library(lubridate)
-library(googlesheets4)
-
-source("utils.R")
-source("module_selector_table.R")
+source("qr_code_funcs.R")
+source("log_funcs.R")
+source("shiny_utils.R")
+source("shiny_module_selector_table.R")
 
 # google sheets ids
 auth_token <- "viewer_client_secret.json"
 rooms_sheet_id <- "10m4I_pJuUz_w_ILQEoxLChJAHDUFTA5zC-rm0HHly4w"
 logs_sheet_id <- "1jfj2u5hm-vIrq1oXiNEGgvEQKpsbovvCZ2iD6uZ3zMM"
+form_url <- "https://docs.google.com/forms/d/e/1FAIpQLSdjnHpnkhpCF6vn8RS_X48pXG4Y3U3DQP_sNo1Yctw56FcmuQ"
+room_field_id <- "entry.28605957"
+direction_field_id <- "entry.1525768046"
 
 # app
 shinyApp(
@@ -27,13 +35,12 @@ shinyApp(
     inline(
       actionButton("refresh_rooms", "Refresh Rooms", icon = icon("refresh")),
       spaces(1),
-      selector_table_buttons_ui("rooms"),
-      spaces(1),
-      downloadButton("generate", "Generate QR Codes for Selected Rooms")
-    )
-    # h1("Logs (TZ = Denver)"),
-    # DTOutput("logs"),
-    # actionButton("refresh_logs", "Refresh Logs", icon = icon("refresh"))
+      selector_table_buttons_ui("rooms")
+    ),
+    h4(downloadButton("generate", "Generate QR Codes for Selected Rooms", style = "color: #03a329; font-weight: bold;")),
+    h1("Recent Logs (TZ = Denver)"),
+    DTOutput("logs"),
+    h4(actionButton("refresh_logs", "Refresh Logs", icon = icon("refresh")))
   ),
   server = function(input, output, session) {
     
@@ -42,30 +49,7 @@ shinyApp(
       input$refresh_rooms
       
       data <- withProgress(
-        {
-          # read only authentication
-          googlesheets4::gs4_auth(
-            scopes = "https://www.googleapis.com/auth/spreadsheets.readonly",
-            path = auth_token
-          )
-          
-          if (googlesheets4::gs4_has_token()) {
-            data <- 
-              tryCatch(
-                googlesheets4::read_sheet(rooms_sheet_id),
-                error = function(e) {
-                  msg <- paste0("google sheet access failed: ", e$message)
-                  warning(msg, immediate. = TRUE, call. = FALSE)
-                  return(msg)
-                }
-              )
-            return(data)
-          } else {
-            msg <- "google sheets authentication failed"
-            warning(msg, immediate. = TRUE, call. = FALSE)
-            return(msg)
-          }
-        }, 
+        read_gs_sheet(sheet_id = rooms_sheet_id, auth_token = auth_token), 
         min = 0, max = 1, 0.5,
         message = "Loading building rooms..."
       )
@@ -88,25 +72,19 @@ shinyApp(
       rooms$set_table(get_rooms())
     })
 
-    # download report
+    # download QR codes =====
     output$generate <- downloadHandler(
       filename = reactive(paste0(paste(rooms$get_selected(), collapse = "_"), "_qr_codes.docx")),
       content = function(file) {
-        temp_dir <- tempdir()
-        temp_report <- file.path(temp_dir, "report.Rmd")
-        file.copy("report.Rmd", temp_report, overwrite = TRUE)
-        file.copy("template1.docx", file.path(temp_dir, "template1.docx"))
-
-        # Set up parameters to pass to Rmd document
-        params <- list(rooms = rooms$get_selected())
-
-        # Knit the document, passing in the `params` list, and eval it in a
-        # child of the global environment (this isolates the code in the document
-        # from the code in this app).
         withProgress(
-          rmarkdown::render(temp_report, output_file = file,
-                            params = params,
-                            envir = new.env(parent = globalenv())
+          generate_qr_codes_doc(
+            template_path = "benson_template.docx",
+            rooms = rooms$get_selected(), 
+            form_url = form_url, 
+            room_field_id = room_field_id, 
+            direction_field_id = direction_field_id,
+            data = rooms$get_selected_items(),
+            save_path = file
           ), 
           min = 0, max = 1, 0.5,
           message = sprintf("Generating QR codes for %d rooms...", isolate(length(rooms$get_selected()))), 
@@ -122,28 +100,14 @@ shinyApp(
         req(get_rooms())
         withProgress(
           {
-            # read only authentication
-            googlesheets4::gs4_auth(
-              scopes = "https://www.googleapis.com/auth/spreadsheets.readonly",
-              path = auth_token
-            )
-            
-            if (googlesheets4::gs4_has_token()) {
-              data <- 
-                tryCatch(
-                  googlesheets4::read_sheet(logs_sheet_id, sheet = "Form Responses 1"),
-                  error = function(e) {
-                    stop("google sheet access failed: ", e$message, call. = FALSE)
-                  }
-                )
-            } else {
-              stop("google sheets authentication failed")
-            }
-            data %>% 
+            logs <- read_gs_sheet(sheet = logs_sheet_id, auth_token = auth_token)
+            print(logs)
+            logs %>% 
+              arrange(desc(Timestamp)) %>% 
+              filter(dplyr::row_number() <= 10) %>% 
               mutate(Room = as.character(Room)) %>% 
               left_join(get_rooms(), by = "Room") %>% 
-              select(When = Timestamp, Who = `Email Address`, Direction, Room, Floor, Category) %>% 
-              arrange(desc(When)) %>% 
+              select(When = Timestamp, Direction, Room, Floor, Category) %>% 
               mutate(When = When %>% lubridate::force_tz("America/Denver") %>% format("%b %d, %I:%M:%S %p"))
           }, 
           min = 0, max = 1, 0.5,
@@ -151,8 +115,9 @@ shinyApp(
         )
       })
     }, 
-    options = list()
-    )
+    options = list(
+      dom = "t"
+    ))
     
   }
 )
